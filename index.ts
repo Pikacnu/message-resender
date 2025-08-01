@@ -24,7 +24,7 @@ import {
   type CanvasRenderingContext2D,
 } from '@napi-rs/canvas';
 
-import { supportedLanguages, generateImage } from './test';
+import { supportedLanguages, generateImage } from './codeblock';
 
 import { join } from 'path';
 import type { BundledLanguage } from 'shiki';
