@@ -4,12 +4,12 @@ import { join } from 'path';
 
 // Register Fira Code font
 GlobalFonts.registerFromPath(
-  join(__dirname, '../assets/fonts/FiraCodeNerdFont-Regular.ttf'),
+  join(import.meta.dir, 'assets', 'fonts', 'FiraCodeNerdFont-Regular.ttf'),
   'Fira Code',
 );
 
 GlobalFonts.registerFromPath(
-  join(__dirname, '../assets/fonts/微軟正黑體.ttf'),
+  join(import.meta.dir, 'assets', 'fonts', '微軟正黑體.ttf'),
   'Microsoft JhengHei',
 );
 
