@@ -13,6 +13,7 @@ import {
   SeparatorBuilder,
   SeparatorSpacingSize,
   AttachmentBuilder,
+  ComponentType,
 } from 'discord.js';
 
 import {
@@ -23,7 +24,10 @@ import {
   type CanvasRenderingContext2D,
 } from '@napi-rs/canvas';
 
+import { supportedLanguages, generateImage } from './test';
+
 import { join } from 'path';
+import type { BundledLanguage } from 'shiki';
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
@@ -51,20 +55,20 @@ try {
 
 // Load custom fonts
 GlobalFonts.registerFromPath(
-  'https://raw.githubusercontent.com/discordjs/discord.js/main/packages/discord.js/src/assets/fonts/sans-serif.ttf',
-  'SansSerif',
-);
-GlobalFonts.registerFromPath(
   join(import.meta.dir, 'assets', 'fonts', 'FiraCodeNerdFont-Regular.ttf'),
   'FiraCodeNerdFont',
 );
 GlobalFonts.registerFromPath(
-  'https://db.onlinewebfonts.com/t/d7f88e15e4b4d91e1e9bdd9de86de2e3.ttf',
+  join(import.meta.dir, 'assets', 'fonts', 'SixHandsMarker.ttf'),
   'Six Hands Marker',
 );
 GlobalFonts.registerFromPath(
   join(import.meta.dir, 'assets', 'fonts', '微軟正黑體.ttf'),
   'Microsoft JhengHei',
+);
+GlobalFonts.registerFromPath(
+  join(import.meta.dir, 'assets', 'fonts', 'NotoSansCJKtc-Regular.ttf'),
+  'Noto Sans CJK TC',
 );
 
 const commands = [
@@ -106,7 +110,7 @@ const canvasWidth = 700;
 const avatarSize = 110; // px
 const avatarPadding = 20; // px
 const font =
-  '16px "Microsoft JhengHei", "Six Hands Marker", "FiraCodeNerdFont"';
+  '16px "FiraCodeNerdFont", "Six Hands Marker", "Microsoft JhengHei", "Noto Sans CJK TC"';
 const lineHeight = 32; // px
 const maxTextWidth = canvasWidth - avatarSize - avatarPadding * 2 - 10; // 10px for padding after avatar
 
@@ -159,6 +163,22 @@ client.on('interactionCreate', async (interaction) => {
               url: attachment.url,
             })),
           });
+          if (targetMessage.components.length > 0) {
+            userData.messages.push({
+              content: targetMessage.components
+                .map((component) => component.toJSON())
+                .join('\n'),
+              attachments: targetMessage.components
+                .filter(
+                  (component) => component.type === ComponentType.MediaGallery,
+                )
+                .flatMap((component) =>
+                  component.items.map((item) => ({
+                    url: item.media.url,
+                  })),
+                ),
+            });
+          }
           await interaction.reply({
             content: `Save Message, Current Messages:${userData.messages.length}`,
             flags: MessageFlags.Ephemeral,
@@ -197,6 +217,13 @@ client.on('interactionCreate', async (interaction) => {
           const urls = [
             ...attachments,
             ...targetMessage.attachments.map((attachment) => attachment.url),
+            ...targetMessage.components
+              .filter(
+                (component) => component.type === ComponentType.MediaGallery,
+              )
+              .flatMap((component) =>
+                component.items.map((item) => item.media.url),
+              ),
           ];
 
           if (textContents.length > 1 && urls.length > 1) {
@@ -234,9 +261,16 @@ client.on('interactionCreate', async (interaction) => {
         }
         case 'combineCurrentMessageImages': {
           const targetMessage = interaction.targetMessage;
-          const imageUrls = targetMessage.attachments.map(
-            (attachment) => attachment.url,
-          );
+          const imageUrls = [
+            ...targetMessage.attachments.map((attachment) => attachment.url),
+            ...targetMessage.components
+              .filter(
+                (component) => component.type === ComponentType.MediaGallery,
+              )
+              .flatMap((component) =>
+                component.items.map((item) => item.media.url),
+              ),
+          ];
 
           if (imageUrls.length === 0) {
             await interaction.reply({
@@ -316,7 +350,6 @@ client.on('interactionCreate', async (interaction) => {
           const message = targetMessage.content
             .replaceAll('-#', '')
             .replaceAll('__', '')
-            .replaceAll('`', '')
             .replaceAll('~~', '')
             .replaceAll('**', '');
 
@@ -339,12 +372,35 @@ client.on('interactionCreate', async (interaction) => {
           measureCtx.font = font;
           // 中文（CJK）通常沒有空格，原本的 wrapText 只會在空白處換行，對中文不友善。
           // 改良：遇到中文字時，逐字測量，遇到英文仍以單詞為單位。
-          function wrapText(
+          async function wrapText(
             ctx: CanvasRenderingContext2D,
             text: string,
             maxWidth: number,
-          ): string[] {
+          ): Promise<[string[], [string, number, number][]]> {
             const lines: string[] = [];
+            const codeBlocks: [string, number, number][] = [];
+            const codeBlockRegex = new RegExp(
+              '```(' +
+                supportedLanguages.reverse().join('|') +
+                ')?([\\s\\S]*?)```|`([^`]+)`',
+              'g',
+            );
+            let match;
+
+            while ((match = codeBlockRegex.exec(text)) !== null) {
+              const lang = match[1] || 'plaintext';
+              const code = match[2] || match[3] || '';
+              const [codeImage, codeImageWidth, codeImageHeight] =
+                await generateImage({
+                  code,
+                  lang: lang as BundledLanguage,
+                  width: maxWidth,
+                  backgroundColor: '#ffffff00',
+                });
+              codeBlocks.push([codeImage, codeImageWidth, codeImageHeight]);
+            }
+            text = text.replace(codeBlockRegex, '\n<CodeBlock>\n');
+
             for (const rawLine of text.split('\n')) {
               let line = '';
               let buffer = '';
@@ -421,23 +477,40 @@ client.on('interactionCreate', async (interaction) => {
               }
               lines.push(line);
             }
-            return lines;
+            return [lines, codeBlocks];
           }
-          const wrappedLines = wrapText(measureCtx, message, maxTextWidth);
+
+          const [wrappedLines, codeBlocks] = await wrapText(
+            measureCtx,
+            message,
+            maxTextWidth,
+          );
+
           const canvasHeight = Math.max(
             avatarPadding * 2 + avatarSize + 120, // 120px for text
-            wrappedLines.length * lineHeight + 40,
+            wrappedLines.length * lineHeight +
+              codeBlocks.reduce((acc, block) => acc + block[2], 0) +
+              40, // 40px for padding and spacing
           );
+
+          const isSmallerThanRequiredHeight =
+            canvasHeight === avatarPadding * 2 + avatarSize + 120;
+
           const canvas = createCanvas(canvasWidth, canvasHeight);
+
           const ctx = canvas.getContext('2d');
+
           ctx.fillStyle = '#ffffff0f';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.save();
           ctx.beginPath();
+
           const avatarRadius = avatarSize / 2;
           const avatarX = avatarPadding + avatarRadius;
           const avatarY = avatarPadding + avatarRadius;
+          const afterAvatar = avatarPadding * 2 + avatarSize;
           ctx.arc(avatarX, avatarY, avatarRadius, 0, Math.PI * 2);
+
           ctx.clip();
           ctx.drawImage(
             avatarImage,
@@ -460,8 +533,48 @@ client.on('interactionCreate', async (interaction) => {
           );
           // Set text alignment and baseline
           let y = 40;
-          const defaultX = avatarPadding * 2 + avatarSize;
-          for (const line of wrappedLines) {
+          let fontSize = Math.max(
+            16,
+            Math.min(
+              Math.floor((canvasHeight - 40) / wrappedLines.length),
+              Math.floor(
+                (canvasWidth - (avatarPadding * 2 + avatarSize)) /
+                  wrappedLines.reduce(
+                    (acc, line) => Math.max(acc, line.length),
+                    0,
+                  ),
+              ),
+            ),
+          );
+          if (isSmallerThanRequiredHeight) {
+            ctx.textBaseline = 'top';
+            ctx.textAlign = 'center';
+            y =
+              canvasHeight / 2 -
+              (wrappedLines.length * Math.max(fontSize, lineHeight)) / 2;
+            ctx.font = font.replace('16px', `${fontSize}px`);
+            measureCtx.font = ctx.font;
+          }
+          const defaultX = isSmallerThanRequiredHeight
+            ? avatarPadding * 2 + avatarSize + (canvasWidth - afterAvatar) / 2
+            : afterAvatar;
+          for (let line of wrappedLines) {
+            // code block support
+            if (line.startsWith('<CodeBlock>')) {
+              const codeBlock = codeBlocks.shift();
+              if (!codeBlock) continue;
+              const [codeImage, codeImageWidth, codeImageHeight] = codeBlock;
+              const codeImageObj = await loadImage(codeImage);
+              ctx.drawImage(
+                codeImageObj,
+                afterAvatar,
+                y - avatarSize,
+                codeImageWidth,
+                codeImageHeight,
+              );
+              y += codeImageHeight - avatarSize; // Adjust y position after code block
+              continue;
+            }
             // emoji support
             const emojiRegex = /<:[A-Za-z0-9_]+:(\d+)>/g;
             const emojiList: [string, string][] = [];
@@ -492,8 +605,8 @@ client.on('interactionCreate', async (interaction) => {
                   const emojiImage = emojiImages[i];
                   if (emojiImage) {
                     const [, img] = emojiImage;
-                    ctx.drawImage(img, x, y - 16, 16, 16); // Draw emoji
-                    x += 16; // Move x position after emoji
+                    ctx.drawImage(img, x, y - fontSize, fontSize, fontSize); // Draw emoji
+                    x += fontSize; // Move x position after emoji
                   }
                 }
               }
@@ -501,7 +614,7 @@ client.on('interactionCreate', async (interaction) => {
               ctx.fillText(line, defaultX, y, maxTextWidth);
             }
 
-            y += lineHeight;
+            y += fontSize * 2;
           }
           const pad = (n: number) => n.toString().padStart(2, '0');
           const formatDateTime = (date: Date) => {
@@ -518,12 +631,13 @@ client.on('interactionCreate', async (interaction) => {
             `Q: ${formatDateTime(new Date())}`,
           ].reverse();
           ctx.font = font.replace('16px', '12px');
+          ctx.textAlign = 'left';
           infoMessage.forEach((info, index) => {
             ctx.fillText(
               info,
               0,
               canvasHeight - ((index + 2) * 12 + 5 * index),
-              avatarSize + avatarPadding,
+              afterAvatar,
             );
           });
 
