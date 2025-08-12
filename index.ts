@@ -317,12 +317,14 @@ client.on('interactionCreate', async (interaction) => {
           let xOffset = 0;
           let yOffset = 0;
           for (const [, img] of Object.entries(urlImageMap)) {
+            const currentImageWidth = img.width;
+            const currentImageHeight = img.height;
             ctx.drawImage(
               img,
-              xOffset,
-              yOffset,
-              singleImageMaxWidth,
-              singleImageMaxHeight,
+              xOffset + (singleImageMaxWidth - currentImageWidth) / 2,
+              yOffset + (singleImageMaxHeight - currentImageHeight) / 2,
+              currentImageWidth,
+              currentImageHeight,
             );
             xOffset += singleImageMaxWidth;
             if (xOffset >= maxWidth) {
