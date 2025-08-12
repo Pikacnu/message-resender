@@ -95,7 +95,7 @@ const commands = [
     .setType(ApplicationCommandType.Message)
     .setNameLocalizations({
       'zh-TW': '合併當前訊息圖片',
-      'en-US': 'Combine Current Message Images',
+      'en-US': "Combine Current Message's Images",
     }),
   new ContextMenuCommandBuilder()
     .setName('quoteItWhyNot')
@@ -272,9 +272,9 @@ client.on('interactionCreate', async (interaction) => {
               ),
           ];
 
-          if (imageUrls.length === 0) {
+          if (imageUrls.length <= 1) {
             await interaction.reply({
-              content: 'No images found in the current message.',
+              content: 'Not enough images to combine. (2 required)',
               flags: MessageFlags.Ephemeral,
             });
             return;
