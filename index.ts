@@ -159,9 +159,20 @@ client.on('interactionCreate', async (interaction) => {
           }
           userData.messages.push({
             content: targetMessage.content,
-            attachments: targetMessage.attachments.map((attachment) => ({
-              url: attachment.url,
-            })),
+            attachments: [
+              ...targetMessage.attachments.map((attachment) => ({
+                url: attachment.url,
+              })),
+              ...targetMessage.components
+                .filter(
+                  (component) => component.type === ComponentType.MediaGallery,
+                )
+                .flatMap((component) =>
+                  component.items.map((item) => ({
+                    url: item.media.url,
+                  })),
+                ),
+            ],
           });
           if (targetMessage.components.length > 0) {
             userData.messages.push({
@@ -226,7 +237,7 @@ client.on('interactionCreate', async (interaction) => {
               ),
           ];
 
-          if (textContents.length > 1 && urls.length > 1) {
+          if (textContents.length > 0 && urls.length > 0) {
             component.addSeparatorComponents(
               new SeparatorBuilder({
                 divider: false,
@@ -235,7 +246,7 @@ client.on('interactionCreate', async (interaction) => {
             );
           }
 
-          if (urls.length > 1)
+          if (urls.length > 0)
             component.addMediaGalleryComponents(
               new MediaGalleryBuilder().addItems(
                 [
