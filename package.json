@@ -11,12 +11,13 @@
     "@types/bun": "latest"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.8.3"
   },
   "dependencies": {
-    "@napi-rs/canvas": "^0.1.74",
-    "discord.js": "^14.21.0",
-    "marked": "^16.1.1",
-    "shiki": "^3.9.1"
+    "@napi-rs/canvas": "^0.1.100",
+    "discord.js": "^14.26.4",
+    "dotenv": "^17.4.2",
+    "marked": "^16.4.2",
+    "shiki": "^3.23.0"
   }
 }
